@@ -75,8 +75,22 @@ public class RsaSignatureFxApp extends Application {
         cbKeySize.setValue(2048);
         cbKeySize.setPrefWidth(120);
 
-        HBox autoRow = new HBox(12, rbAuto, new Label("Kích thước khóa:"), cbKeySize);
+        // ===== Row "Tự động | Kích thước khóa: | [Combo]" đẹp & thẳng hàng =====
+        Label lbKeySize = new Label("Kích thước khóa:");
+        lbKeySize.setMinWidth(110);     // cố định độ rộng label để không bị lệch
+        lbKeySize.setPrefWidth(110);
+
+        cbKeySize.setPrefWidth(150);
+        cbKeySize.setMinWidth(150);
+        cbKeySize.setMaxWidth(150);
+        cbKeySize.setPrefHeight(28);
+
+        rbAuto.setMinWidth(80);         // để chữ "Tự động" không ép layout
+        rbCustom.setMinWidth(80);
+
+        HBox autoRow = new HBox(10);
         autoRow.setAlignment(Pos.CENTER_LEFT);
+        autoRow.getChildren().addAll(rbAuto, lbKeySize, cbKeySize);
 
         TextField tfP = new TextField();
         TextField tfQ = new TextField();
