@@ -17,6 +17,16 @@ import java.security.*;
 import java.security.spec.*;
 import java.util.Base64;
 
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
+
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
+
 public class RsaSignatureFxApp extends Application {
 
     // ===================== STATE (KEYGEN + SIGN) =====================
@@ -77,7 +87,7 @@ public class RsaSignatureFxApp extends Application {
 
         // ===== Row "Tự động | Kích thước khóa: | [Combo]" đẹp & thẳng hàng =====
         Label lbKeySize = new Label("Kích thước khóa:");
-        lbKeySize.setMinWidth(110);     // cố định độ rộng label để không bị lệch
+        lbKeySize.setMinWidth(110);
         lbKeySize.setPrefWidth(110);
 
         cbKeySize.setPrefWidth(150);
@@ -85,7 +95,7 @@ public class RsaSignatureFxApp extends Application {
         cbKeySize.setMaxWidth(150);
         cbKeySize.setPrefHeight(28);
 
-        rbAuto.setMinWidth(80);         // để chữ "Tự động" không ép layout
+        rbAuto.setMinWidth(80);
         rbCustom.setMinWidth(80);
 
         HBox autoRow = new HBox(10);
@@ -332,17 +342,30 @@ public class RsaSignatureFxApp extends Application {
         Label status = new Label();
         status.setStyle("-fx-font-weight: bold;");
 
-        final File[] selectedTextFile = {null};
+        final File[] selectedFile = {null};
 
         btnOpen.setOnAction(e -> {
-            File f = openDialog(stage, "Chọn file văn bản", "Text", "*.txt", "*.md", "*.log", "*.*");
+            File f = openDialog(
+                    stage,
+                    "Chọn file cần ký",
+                    "Tài liệu",
+                    "*.txt", "*.md", "*.log",
+                    "*.docx",
+                    "*.xlsx",
+                    "*.pdf",
+                    "*.*"
+            );
             if (f == null) return;
+
             try {
-                selectedTextFile[0] = f;
+                selectedFile[0] = f;
                 tfFile.setText(f.getAbsolutePath());
-                byte[] bytes = Files.readAllBytes(f.toPath());
-                taContent.setText(new String(bytes, StandardCharsets.UTF_8));
-                status.setText("✅ Đã đọc file văn bản.");
+
+                // ✅ đọc nội dung theo loại file (txt/docx/xlsx/pdf)
+                String extractedText = Helpers.extractText(f);
+                taContent.setText(extractedText);
+
+                status.setText("✅ Đã đọc file: " + f.getName());
             } catch (Exception ex) {
                 status.setText("❌ Lỗi đọc file: " + ex.getMessage());
                 showAlert(Alert.AlertType.ERROR, "Lỗi", ex.getMessage());
@@ -350,18 +373,18 @@ public class RsaSignatureFxApp extends Application {
         });
 
         // Nếu user gõ tay thì coi như không dùng file
-        taContent.textProperty().addListener((o, ov, nv) -> selectedTextFile[0] = null);
+        taContent.textProperty().addListener((o, ov, nv) -> selectedFile[0] = null);
 
         btnSign.setOnAction(e -> {
             try {
                 ensurePrivateKey(stage);
 
                 byte[] msgBytes;
-                if (selectedTextFile[0] != null) {
-                    msgBytes = Files.readAllBytes(selectedTextFile[0].toPath()); // chuẩn nhất
+                if (selectedFile[0] != null) {
+                    // ✅ ký theo nội dung trích xuất (đảm bảo docx/pdf/xlsx không bị "PK...")
+                    msgBytes = Helpers.extract(selectedFile[0]);
                 } else {
-                    // normalize newline để consistent
-                    String normalized = taContent.getText().replace("\r\n", "\n");
+                    String normalized = Helpers.normalize(taContent.getText());
                     msgBytes = normalized.getBytes(StandardCharsets.UTF_8);
                 }
 
@@ -409,7 +432,7 @@ public class RsaSignatureFxApp extends Application {
         root.getChildren().addAll(
                 title,
                 fileRow,
-                new Label("Nội dung văn bản:"),
+                new Label("Nội dung văn bản (đã trích xuất):"),
                 taContent,
                 hashRow,
                 lbSig,
@@ -484,7 +507,7 @@ public class RsaSignatureFxApp extends Application {
         status.setMaxWidth(Double.MAX_VALUE);
         status.setAlignment(Pos.CENTER);
 
-        final File[] selectedTextFile = {null};
+        final File[] selectedFile = {null};
 
         btnLoadPubPem.setOnAction(e -> {
             File f = openDialog(stage, "Chọn Public Key (PEM)", "PEM", "*.pem", "*.*");
@@ -493,7 +516,6 @@ public class RsaSignatureFxApp extends Application {
                 String pem = Files.readString(f.toPath(), StandardCharsets.UTF_8);
                 taPem.setText(pem);
 
-                // parse thử để báo lỗi sớm
                 PublicKey pub = loadPublicKeyFromPem(pem);
                 info.setText("Key FP=" + fingerprint6(pub));
                 status.setText("✅ Đã nạp khóa công khai.");
@@ -505,13 +527,25 @@ public class RsaSignatureFxApp extends Application {
         });
 
         btnLoadText.setOnAction(e -> {
-            File f = openDialog(stage, "Chọn file văn bản", "Text", "*.txt", "*.md", "*.log", "*.*");
+            File f = openDialog(
+                    stage,
+                    "Chọn file văn bản cần xác minh",
+                    "Tài liệu",
+                    "*.txt", "*.md", "*.log",
+                    "*.docx",
+                    "*.xlsx",
+                    "*.pdf",
+                    "*.*"
+            );
             if (f == null) return;
             try {
-                selectedTextFile[0] = f;
-                byte[] bytes = Files.readAllBytes(f.toPath());
-                taText.setText(new String(bytes, StandardCharsets.UTF_8));
-                status.setText("✅ Đã đọc nội dung văn bản.");
+                selectedFile[0] = f;
+
+                // ✅ hiển thị nội dung đã trích xuất
+                String extractedText = Helpers.extractText(f);
+                taText.setText(extractedText);
+
+                status.setText("✅ Đã đọc nội dung văn bản: " + f.getName());
             } catch (Exception ex) {
                 status.setText("❌ Lỗi đọc văn bản: " + ex.getMessage());
                 showAlert(Alert.AlertType.ERROR, "Lỗi", ex.getMessage());
@@ -532,7 +566,7 @@ public class RsaSignatureFxApp extends Application {
         });
 
         // user gõ tay thì coi như không dùng file
-        taText.textProperty().addListener((o, ov, nv) -> selectedTextFile[0] = null);
+        taText.textProperty().addListener((o, ov, nv) -> selectedFile[0] = null);
 
         btnVerify.setOnAction(e -> {
             try {
@@ -540,24 +574,22 @@ public class RsaSignatureFxApp extends Application {
                 String pemText = taPem.getText() == null ? "" : taPem.getText().trim();
                 if (pemText.isEmpty()) throw new IllegalStateException("Thiếu khóa công khai (PEM).");
 
-                // LUÔN parse lại mỗi lần verify (KHÔNG CACHE)
                 PublicKey pub = loadPublicKeyFromPem(pemText);
                 info.setText("Key FP=" + fingerprint6(pub));
 
                 // ====== 2) BẮT BUỘC: NỘI DUNG VĂN BẢN ======
                 byte[] msgBytes;
-                if (selectedTextFile[0] != null) {
-                    msgBytes = Files.readAllBytes(selectedTextFile[0].toPath());
+                if (selectedFile[0] != null) {
+                    msgBytes = Helpers.extract(selectedFile[0]); // ✅ docx/pdf/xlsx/txt đều chuẩn
                 } else {
                     String text = taText.getText() == null ? "" : taText.getText();
-                    text = text.replace("\r\n", "\n"); // normalize newline
-                    msgBytes = text.getBytes(StandardCharsets.UTF_8);
+                    msgBytes = Helpers.normalize(text).getBytes(StandardCharsets.UTF_8);
                 }
                 if (msgBytes.length == 0) throw new IllegalStateException("Thiếu nội dung văn bản cần xác minh.");
 
                 // ====== 3) BẮT BUỘC: CHỮ KÝ BASE64 ======
                 String b64 = taSig.getText() == null ? "" : taSig.getText();
-                b64 = b64.replaceAll("\\s+", ""); // remove spaces/newlines
+                b64 = b64.replaceAll("\\s+", "");
                 if (b64.isEmpty()) throw new IllegalStateException("Thiếu chữ ký Base64.");
 
                 byte[] sigBytes;
@@ -589,7 +621,7 @@ public class RsaSignatureFxApp extends Application {
         });
 
         btnClear.setOnAction(e -> {
-            selectedTextFile[0] = null;
+            selectedFile[0] = null;
             taPem.clear();
             taText.clear();
             taSig.clear();
@@ -711,6 +743,90 @@ public class RsaSignatureFxApp extends Application {
         a.setHeaderText(null);
         a.setContentText(content);
         a.showAndWait();
+    }
+
+    // ===================== Helpers: extract TXT/DOCX/XLSX/PDF =====================
+    private static class Helpers {
+
+        static byte[] extract(File file) throws Exception {
+            String text = extractText(file);
+            return text.getBytes(StandardCharsets.UTF_8);
+        }
+
+        static String extractText(File file) throws Exception {
+            if (file == null) throw new IllegalArgumentException("File rỗng.");
+
+            String name = file.getName().toLowerCase();
+
+            if (name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".log")) {
+                String s = Files.readString(file.toPath(), StandardCharsets.UTF_8);
+                return normalize(s);
+            }
+
+            if (name.endsWith(".docx")) {
+                return normalize(readDocx(file));
+            }
+
+            if (name.endsWith(".xlsx")) {
+                return normalize(readXlsx(file));
+            }
+
+            if (name.endsWith(".pdf")) {
+                return normalize(readPdf(file));
+            }
+
+            // fallback: nếu user chọn *.* thì báo rõ
+            throw new IllegalArgumentException("Không hỗ trợ định dạng file: " + name);
+        }
+
+        static String normalize(String s) {
+            if (s == null) return "";
+            return s
+                    .replace("\r\n", "\n")
+                    .replaceAll("[ \\t]+", " ")
+                    .trim();
+        }
+
+        private static String readDocx(File file) throws Exception {
+            try (var is = Files.newInputStream(file.toPath());
+                 var doc = new XWPFDocument(is);
+                 var extractor = new XWPFWordExtractor(doc)) {
+                return extractor.getText();
+            }
+        }
+
+        private static String readXlsx(File file) throws Exception {
+            StringBuilder sb = new StringBuilder();
+            try (var is = Files.newInputStream(file.toPath());
+                 Workbook wb = new XSSFWorkbook(is)) {
+
+                DataFormatter fmt = new DataFormatter();
+                for (int s = 0; s < wb.getNumberOfSheets(); s++) {
+                    Sheet sheet = wb.getSheetAt(s);
+                    sb.append("== Sheet: ").append(sheet.getSheetName()).append(" ==\n");
+
+                    for (Row row : sheet) {
+                        short last = row.getLastCellNum();
+                        if (last < 0) continue;
+                        for (int c = 0; c < last; c++) {
+                            Cell cell = row.getCell(c, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
+                            String v = (cell == null) ? "" : fmt.formatCellValue(cell);
+                            sb.append(v).append('\t');
+                        }
+                        sb.append('\n');
+                    }
+                    sb.append('\n');
+                }
+            }
+            return sb.toString();
+        }
+
+        private static String readPdf(File file) throws Exception {
+            try (PDDocument doc = PDDocument.load(file)) {
+                PDFTextStripper stripper = new PDFTextStripper();
+                return stripper.getText(doc);
+            }
+        }
     }
 
     public static void main(String[] args) {
