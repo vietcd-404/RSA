@@ -590,13 +590,13 @@ public class RsaSignatureFxApp extends Application {
                 // ====== 3) BẮT BUỘC: CHỮ KÝ BASE64 ======
                 String b64 = taSig.getText() == null ? "" : taSig.getText();
                 b64 = b64.replaceAll("\\s+", "");
-                if (b64.isEmpty()) throw new IllegalStateException("Thiếu chữ ký Base64.");
+                if (b64.isEmpty()) throw new IllegalStateException("Thiếu chữ ký");
 
                 byte[] sigBytes;
                 try {
                     sigBytes = Base64.getDecoder().decode(b64);
                 } catch (IllegalArgumentException ex) {
-                    throw new IllegalStateException("Chữ ký không đúng Base64.");
+                    throw new IllegalStateException("Chữ ký không hợp lệ.");
                 }
                 if (sigBytes.length == 0) throw new IllegalStateException("Chữ ký rỗng.");
 
