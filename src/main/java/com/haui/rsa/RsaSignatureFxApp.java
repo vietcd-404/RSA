@@ -195,7 +195,6 @@ public class RsaSignatureFxApp extends Application {
 
                 st.publicPem = toPem("PUBLIC KEY", st.publicKey.getEncoded());
                 st.privatePem = toPem("PRIVATE KEY", st.privateKey.getEncoded());
-
                 taPub.setText(st.publicPem);
                 taPri.setText(st.privatePem);
                 status.setText("✅ Đã sinh khóa thành công.");
